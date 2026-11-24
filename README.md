@@ -118,6 +118,18 @@ expression mode works with anything that prints a derivation path for `-E` (`--k
 line when the harness cannot tell from `bin/`). Evaluators that only print a path and never write a
 derivation into a store (brix, snix, gonix) cannot hand a graph over with this method.
 
+## Granular evaluation caching
+
+Because the planner is content-addressed, an evaluation result is cached like any build result: rebuilding an
+unchanged planner is a realisation lookup. To make that cache granular, give the planner only the files the
+evaluation reads instead of the whole tree. `fragment.py` cuts that subset out of a trace of one native
+evaluation (see its docstring for the `strace` incantation; use an empty `XDG_CACHE_HOME`, a warm fetcher
+cache hides reads). A change anywhere else in the tree then leaves the planner's inputs, and its cache key,
+untouched; a change inside the fragment re-evaluates that one target; on a miss, trace the full tree again.
+
+On the blog post's large flake the fragment for one target was 1,391 of 17,897 files; an unrelated change
+cost a 0.4 s realisation lookup against a 41 s re-evaluation of the full-tree planner.
+
 ## Environment
 
 | variable | meaning |
@@ -133,6 +145,7 @@ derivation into a store (brix, snix, gonix) cannot hand a graph over with this m
 - `planner.nix` — the planner and consumer derivations (`nix build --impure -f planner.nix planner --argstr …` works without the harness).
 - `readd.py` — the level-parallel re-add walk over the limited socket.
 - `prepare-inputs.py` — pins a flake's inputs to store paths and writes the registration rows.
+- `fragment.py` — cuts the files an evaluation read out of a tree, for the granular cache.
 - `run.sh` — the harness that produces a table row.
 - `examples/hello` — a small flake to start from.
 
