@@ -87,7 +87,7 @@ NIXPKGS_I=(-I "nixpkgs=$NP")
 # 2. the evaluator and the in-sandbox client as store paths
 resolve() {  # nixpkgs attribute or store path -> store path
   case $1 in /nix/store/*) echo "$1" ;;
-    *) nix build --impure "${NIXPKGS_I[@]}" --expr "(import <nixpkgs> { }).$1" --no-link --print-out-paths | grep -vE -- '-(man|doc|dev|debug|info)$' | head -n 1 ;;
+    *) nix build --impure "${NIXPKGS_I[@]}" --expr "(import <nixpkgs> { ${SYSTEM:+system = \"$SYSTEM\";} }).$1" --no-link --print-out-paths | grep -vE -- '-(man|doc|dev|debug|info)$' | head -n 1 ;;
   esac
 }
 EV=$(resolve "$EVALUATOR"); RPCP=$(resolve "$RPC")
