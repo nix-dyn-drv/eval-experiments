@@ -54,6 +54,7 @@ let
     registration = if register == null then "" else builtins.readFile register;
     nixpkgsPath = if nixpkgsPath == null || nixpkgsPath == "" then "" else builtins.storePath nixpkgsPath;
     readd = builtins.path { path = ./readd.py; name = "readd.py"; };
+    readdPerobject = builtins.path { path = ./readd-perobject.py; name = "readd-perobject.py"; };
     readdJobs = toString jobs;
     needsDaemon = if needsDaemon then "1" else "";
     passAsFile = [ "overrideArgs" "registration" ];
@@ -90,7 +91,7 @@ let
       rss=$(awk -F': ' '/Maximum resident set size/{print $2}' $TMPDIR/time.txt)
       echo "METRIC kind=$kind wall=$wall maxrss_kb=$rss drv=$d" >&2
       [ -n "$needsDaemon" ] && { kill $dpid 2>/dev/null || true; }
-      READD_JOBS=$readdJobs python3 -I $readd "$d" $rpcNix/bin/nix "$store" "$NIX_REMOTE"
+      READD_JOBS=$readdJobs READD_PEROBJECT=$readdPerobject python3 -I $readd "$d" $rpcNix/bin/nix "$store" "$NIX_REMOTE"
       s0=$(date +%s.%N)
       $rpcNix/bin/nix store submit-output "$d" out
       echo "SUBMITTED $d wall=$(awk -v a=$s0 -v b=$(date +%s.%N) 'BEGIN{printf "%.2f", b-a}')s" >&2

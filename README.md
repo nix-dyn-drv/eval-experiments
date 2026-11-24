@@ -17,10 +17,12 @@ builder:
    the flake inputs, so nothing is copied;
 2. runs the evaluator against that store (`nix eval --offline` with every flake input pinned to a store
    path, or `nix-instantiate`, `iets`, `fix` for an expression);
-3. walks the emitted derivation's closure, references first, and re-adds every object into the outer
-   store through the socket with the operations it already allows: `nix store add` for sources,
-   `nix derivation add` for derivations (`readd.py`, one `nix` process per object, one dependency
-   level at a time in parallel);
+3. re-adds the emitted derivation's closure into the outer store through the socket with the
+   operations it already allows: one `AddMultipleToStore` on one connection, the objects in dependency
+   order, the NARs produced in-process (`readd.py`; `nix copy` cannot be used because it first issues
+   `QueryValidPaths`, which the socket refuses). `READD_MODE=perobject` selects the original walk,
+   `readd-perobject.py`: `nix store add` for sources and `nix derivation add` for derivations, one
+   `nix` process per object, one dependency level at a time in parallel;
 4. submits the top-level derivation with `nix store submit-output`.
 
 A *consumer* derivation depends on the result through `builtins.outputOf`, so the target is never
@@ -143,7 +145,8 @@ cost a 0.4 s realisation lookup against a 41 s re-evaluation of the full-tree pl
 ## Layout
 
 - `planner.nix` — the planner and consumer derivations (`nix build --impure -f planner.nix planner --argstr …` works without the harness).
-- `readd.py` — the level-parallel re-add walk over the limited socket.
+- `readd.py` — the batched re-add: the closure in one `AddMultipleToStore` over the limited socket.
+- `readd-perobject.py` — the original re-add walk, one `nix` process per object (`READD_MODE=perobject`).
 - `prepare-inputs.py` — pins a flake's inputs to store paths and writes the registration rows.
 - `fragment.py` — cuts the files an evaluation read out of a tree, for the granular cache.
 - `run.sh` — the harness that produces a table row.
@@ -151,9 +154,12 @@ cost a 0.4 s realisation lookup against a 41 s re-evaluation of the full-tree pl
 
 ## Caveats
 
-- The re-add walk is the naive cost of the method: ~60 ms of process spawn per object. A client that
-  kept one connection open for the whole closure would collapse it; this repository leaves it naive on
-  purpose so the cost is visible. `--jobs` only parallelises within a dependency level.
+- The batched re-add sends the whole closure every time: `IsValidPath` through the socket only answers
+  for the paths the sandbox may see (its inputs and what it added itself), so the planner cannot ask
+  which objects the outer store already holds. The outer store restores only the objects it is missing
+  and discards the NARs of the rest, so a closure that is already present costs the NAR generation and
+  the transfer (about 2 s for 2,000 objects and 110 MB). The per-object walk costs ~60 ms of process
+  spawn per object on top; `--jobs` only parallelises within a dependency level there.
 - `nix derivation add` reads input derivations from the filesystem, which is why the private store has
   to live in the sandbox's `/nix/store` rather than in a scratch directory.
 - The submitted output must carry the emitted derivation's name; the harness takes it from the baseline
